@@ -1,10 +1,28 @@
 import numpy as np
 import uuid
 import json
-import image_processing.drones as drones
-import image_processing.georeferencers as georeferencers
-import image_processing.rectifiers as rectifiers
+from socket import *
+from struct import *
+import image_processing.drones_socket as drones
+import image_processing.georeferencers_socket as georeferencers
+import image_processing.rectifiers_socket as rectifiers
 import logging
+import cv2
+
+
+with open("config.json") as f:
+    data = json.load(f)
+
+SERVER_PORT = data["server"]["PORT"]
+QUEUE_LIMIT = data["server"]["QUEUE_LIMIT"]     # 서버 대기 큐
+
+CLIENT_IP = data["client"]["IP"]
+CLIENT_PORT = data["client"]["PORT"]
+
+client = socket(AF_INET, SOCK_STREAM)
+client.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+client.connect((CLIENT_IP, CLIENT_PORT))
+
 
 # https://stackoverflow.com/questions/55014710/zero-fill-right-shift-in-python
 def zero_fill_right_shift(val, n):
@@ -75,10 +93,10 @@ def receive(c_sock):
           data["roll"], data["pitch"], data["yaw"])
     c_sock.send(b"Done")
 
-    return taskID, frameID, latitude, longitude, altitude, data["roll"], data["pitch"], data["yaw"]
+    return taskID, frameID, latitude, longitude, altitude, data["roll"], data["pitch"], data["yaw"], nparr
 
 
-def send(c_sock, uuid, task_id, name, img_type, img_boundary, objects):
+def send(frame_id, task_id, name, img_type, img_boundary, objects, orthophoto):
     """
         Create a metadata of an orthophoto for tcp transmission
         :param uuid: uuid of the image | string
@@ -88,52 +106,69 @@ def send(c_sock, uuid, task_id, name, img_type, img_boundary, objects):
         :param img_boundary: Boundary of the orthophoto | string in wkt
         :param objects: JSON object? array? of the detected object ... from create_obj_metadata
         :return: JSON object of the orthophoto ... python dictionary
-        """
+    """
     img_metadata = {
-        "uid": uuid,  # string
-        "task_id": task_id,  # string
-        "img_name": name,  # string
+        "uid": str(frame_id),  # string
+        "task_id": str(task_id),  # string
+        "img_name": str(name),  # string
         "img_type": img_type,  # int
         "img_boundary": img_boundary,  # WKT ... string
         "objects": objects
     }
+    img_metadata_bytes = json.dumps(img_metadata).encode()
 
-    c_sock.send(img_metadata)
+    # Write image to memory
+    orthophoto_encode = cv2.imencode('.png', orthophoto)
+    orthophoto_bytes = orthophoto_encode[1].tostring()
 
-    return img_metadata
-
+    #############################################
+    # Send object information to web map viewer #
+    #############################################
+    full_length = len(img_metadata_bytes) + len(orthophoto_bytes)
+    fmt = '<4siii' + str(len(img_metadata_bytes)) + 's' + str(len(orthophoto_bytes)) + 's'  # s: string, i: int
+    data_to_send = pack(fmt, b"IPOD", full_length, len(img_metadata_bytes), len(orthophoto_bytes),
+                        img_metadata_bytes, orthophoto_bytes)
+    client.send(data_to_send)
 
 
 # https://stackoverflow.com/questions/26445331/how-can-i-have-multiple-clients-on-a-tcp-python-chat-server
-def client_thread(c_sock):
-    c_sock.send(b"Welcome to the Server. Type messages and press enter to send.\n")
+def client_thread(s_sock):
+    s_sock.send(b"Welcome to the Server. Type messages and press enter to send.\n")
     while True:
-        taskID, frameID, latitude, longitude, altitude, roll, pitch, yaw = receive(c_sock)
+        taskID, frameID, latitude, longitude, altitude, roll, pitch, yaw, img = receive(s_sock)
         if not taskID or not frameID or not latitude or not longitude or not altitude \
                 or not roll or not pitch or not yaw:
             break
 
-        my_drone = drones.DJIMavicPRO()     # IO만 필요
-        my_georeferencer = georeferencers.DirectGeoreferencer()     # llh -> XYZ, RPY -> OPK로 변환만 하면 됨
-        my_rectifier = rectifiers.AverageOrthoplaneRectifier(height=0)  # imread 필요X, bbox_wkt와 orthphoto array
+        # 1. Set IO
+        my_drone = drones.DJIPhantom4RTK(pre_calibrated=True)
+        # sensor_width = my_drone.sensor_width
+        # focal_length = my_drone.focal_length
+        # gsd = my_drone.gsd
+        # ground_height = my_drone.ground_height
+        # R_CB = my_drone.R_CB
+        # comb = my_drone.comb
+        # manufacturer = my_drone.manufacturer
+
+        # 2. System calibration & CCS converting
+        init_eo = np.array([longitude, latitude, altitude, roll, pitch, yaw])
+        if my_drone.pre_calibrated:
+            init_eo[3:] = init_eo[3:] * np.pi / 180
+            adjusted_eo = init_eo
+        else:
+            my_georeferencer = georeferencers.DirectGeoreferencer()
+            adjusted_eo = my_georeferencer.georeference(my_drone, init_eo)
+
+        # 3. Rectify
+        my_rectifier = rectifiers.AverageOrthoplaneRectifier(height=my_drone.ground_height)
+        bbox_wkt, orthophoto = my_rectifier.rectify(img, my_drone, adjusted_eo)
 
         logging.info('========================================================================================')
         logging.info('========================================================================================')
         logging.info('A new image is received.')
         logging.info('File name: %s' % frameID)
         logging.info('Current Drone: %s' % my_drone.__class__.__name__)
-        logging.info('Current Georeferencer: %s' % my_georeferencer.__class__.__name__)
-        logging.info('Current Rectifier: %s' % my_rectifier.__class__.__name__)
         logging.info('========================================================================================')
 
-        logging.info('Extracting information...')
-        my_drone.extract_info(fpath_dict['img_orig'])
-
-        logging.info('Georeferencing...')
-        adjusted_eo = my_georeferencer.georeference(my_drone)
-
-        logging.info('Rectifying...')
-        img_rectified_fpath, _ = my_rectifier.rectify(fpath_dict['img_orig'], my_drone.io, adjusted_eo, project_path)
-
-        send(c_sock)    # 메타데이터 생성/ send to client
-    c_sock.close()
+        send(frameID, taskID, frameID, 0, bbox_wkt, [], orthophoto)    # 메타데이터 생성/ send to client
+    s_sock.close()

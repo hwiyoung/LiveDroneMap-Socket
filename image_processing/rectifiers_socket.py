@@ -6,7 +6,6 @@ from copy import copy
 import numpy as np
 from numba import jit
 from osgeo import gdal, osr, ogr
-import os
 import logging
 
 
@@ -21,7 +20,7 @@ class BaseRectifier(ABC):
         self.gsd = gsd
 
     @abstractmethod
-    def rectify(self, img_fpath, io, adjusted_eo, project_path):
+    def rectify(self, img, my_drone, adjusted_eo):
         """
         Rectify an image using its interior orientation, adjusted exterior orientation and digital elevation model.
 
@@ -142,7 +141,7 @@ class AverageOrthoplaneRectifier(BaseRectifier):
         R = np.linalg.multi_dot([Rz, Ry, Rx])
         return R
 
-    def __boundary(self,image, eo, R, dem, pixel_size, focal_length):
+    def __boundary(self, image, eo, R, dem, pixel_size, focal_length):
         inverse_R = R.transpose()
 
         image_vertex = self.__getVertices(image, pixel_size, focal_length)  # shape: 3 x 4
@@ -155,9 +154,9 @@ class AverageOrthoplaneRectifier(BaseRectifier):
         bbox[2] = min(proj_coordinates[1, :])  # Y min
         bbox[3] = max(proj_coordinates[1, :])  # Y max
 
-        return bbox
+        return bbox, proj_coordinates.T
 
-    def __getVertices(self,image, pixel_size, focal_length):
+    def __getVertices(self, image, pixel_size, focal_length):
         rows = image.shape[0]
         cols = image.shape[1]
 
@@ -271,94 +270,52 @@ class AverageOrthoplaneRectifier(BaseRectifier):
         dst_ds = None
 
     def __export_bbox_to_wkt(self, bbox):
-        ring = ogr.Geometry(ogr.wkbLinearRing)
-        ring.AddPoint(bbox[0][0], bbox[2][0])
-        ring.AddPoint(bbox[0][0], bbox[3][0])
-        ring.AddPoint(bbox[1][0], bbox[2][0])
-        ring.AddPoint(bbox[1][0], bbox[3][0])
-        geom_poly = ogr.Geometry(ogr.wkbPolygon)
-        geom_poly.AddGeometry(ring)
-        wkt = geom_poly.ExportToWkt()
-        return wkt
+        res = "POLYGON ((" + \
+              str(bbox[0, 0]) + " " + str(bbox[0, 1]) + ", " + \
+              str(bbox[1, 0]) + " " + str(bbox[1, 1]) + ", " + \
+              str(bbox[2, 0]) + " " + str(bbox[2, 1]) + ", " + \
+              str(bbox[3, 0]) + " " + str(bbox[3, 1]) + ", " + \
+              str(bbox[0, 0]) + " " + str(bbox[0, 1]) + "))"
+        return res
 
-    def rectify(self, img_fpath, io, adjusted_eo, project_path):
-        start_time = time.time()
-
-        logging.debug('Read the image - ' + img_fpath)
-        image = cv2.imread(img_fpath)
+    def rectify(self, img, my_drone, adjusted_eo):
+        img = cv2.imdecode(img, cv2.IMREAD_COLOR)
 
         # 1. Restore the image based on orientation information
-        restored_image = self.__restoreOrientation(image, io['orientation'])
+        # restored_image = self.__restoreOrientation(img, io['orientation'])
+        restored_image = img
 
         image_rows = restored_image.shape[0]
         image_cols = restored_image.shape[1]
 
-        pixel_size = io['sensor_width'] / image_cols  # unit: mm/px
+        pixel_size = my_drone.sensor_width / image_cols  # unit: mm/px
         pixel_size = pixel_size / 1000  # unit: m/px
 
-        end_time = time.time()
-        logging.debug("--- %s seconds ---" % (time.time() - start_time))
-
-        read_time = end_time - start_time
-
-        logging.debug('Read EOP - ' + img_fpath)
-        logging.debug('Northing | Easting | Height | Omega | Phi | Kappa')
+        logging.debug('Easting | Northing | Height | Omega | Phi | Kappa')
         converted_eo = self.__geographic2plane(adjusted_eo, 5186)
-        logging.debug(converted_eo)
         R = self.__Rot3D(converted_eo)
 
         # 2. Extract a projected boundary of the image
-        bbox = self.__boundary(restored_image, converted_eo, R, self.height, pixel_size, io['focal_length'])
-        logging.debug("--- %s seconds ---" % (time.time() - start_time))
+        bbox, proj_bbox = self.__boundary(restored_image, converted_eo, R, self.height, pixel_size, my_drone.focal_length)
 
         if self.gsd == 'auto':
-            self.gsd = (pixel_size * (converted_eo[2] - self.height)) / io['focal_length']  # unit: m/px
+            self.gsd = (pixel_size * (converted_eo[2] - self.height)) / my_drone.focal_length  # unit: m/px
 
         # Boundary size
         boundary_cols = int((bbox[1, 0] - bbox[0, 0]) / self.gsd)
         boundary_rows = int((bbox[3, 0] - bbox[2, 0]) / self.gsd)
 
-        logging.debug('projectedCoord')
-        start_time = time.time()
         proj_coords = self.__projectedCoord(bbox, boundary_rows, boundary_cols, self.gsd, converted_eo, self.height)
-        logging.debug("--- %s seconds ---" % (time.time() - start_time))
 
         # Image size
         image_size = np.reshape(restored_image.shape[0:2], (2, 1))
 
-        logging.debug('backProjection')
-        start_time = time.time()
-        backProj_coords = self.__backProjection(proj_coords, R, io['focal_length'], pixel_size, image_size)
-        logging.debug("--- %s seconds ---" % (time.time() - start_time))
+        backProj_coords = self.__backProjection(proj_coords, R, my_drone.focal_length, pixel_size, image_size)
 
-        logging.debug('resample')
-        start_time = time.time()
-        b, g, r, a = self.__resample(backProj_coords, boundary_rows, boundary_cols, image)
-        logging.debug("--- %s seconds ---" % (time.time() - start_time))
+        b, g, r, a = self.__resample(backProj_coords, boundary_rows, boundary_cols, img)
 
-        logging.debug('Save the image in GeoTiff')
-        start_time = time.time()
-        img_rectified_fpath_kctm = os.path.join(project_path, img_fpath.split('/')[-1].split('.')[0] + '_rectified_kctm.tif')
-        self.__createGeoTiff(b, g, r, a, bbox, self.gsd, boundary_rows, boundary_cols, img_rectified_fpath_kctm)
+        orthophoto_array = cv2.merge((b, g, r, a))
 
-        # GDAL warp to reproject from EPSG:5186 to EPSG:4326
-        img_rectified_fpath = os.path.join(project_path, img_fpath.split('/')[-1].split('.')[0] + '_rectified_wgs84.tif')
-        gdal.Warp(
-            img_rectified_fpath,
-            img_rectified_fpath_kctm,
-            format='GTiff',
-            srcSRS='EPSG:5186',
-            dstSRS='EPSG:4326'
-        )
+        bbox_wkt = self.__export_bbox_to_wkt(proj_bbox)
 
-        # Remove orthoimage georeferenced as EPSG:5186
-        os.remove(img_rectified_fpath_kctm)
-
-        logging.debug("--- %s seconds ---" % (time.time() - start_time))
-
-        logging.debug('*** Processing time per each image')
-        logging.debug("--- %s seconds ---" % (time.time() - start_time + read_time))
-
-        bbox_wkt = self.__export_bbox_to_wkt(bbox)
-
-        return img_rectified_fpath, bbox_wkt
+        return bbox_wkt, orthophoto_array
