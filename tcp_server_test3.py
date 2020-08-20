@@ -5,12 +5,13 @@ import numpy as np
 import uuid
 from _thread import start_new_thread
 import json
+import pyexiv2
 
 
-def write_image(img, frameID, i):
+def write_image(img, frameID):
     img_decode = cv2.imdecode(img, cv2.IMREAD_COLOR)
-    cv2.imwrite(str(frameID) + "_" + str(i) + ".jpg", img_decode)
-    print(str(frameID) + "_" + str(i) + ".jpg")
+    cv2.imwrite(str(frameID) + ".jpg", img_decode)
+    print(str(frameID) + ".jpg")
 
 
 # https://stackoverflow.com/questions/55014710/zero-fill-right-shift-in-python
@@ -37,8 +38,6 @@ def parse_header(binary_header):
 
 
 def receive(c_sock):
-    i = 0
-
     binaryHeader = c_sock.recv(2)  # Read the length of header
     packetHeader = parse_header(binaryHeader)
     timeStamp = c_sock.recv(8)
@@ -80,6 +79,13 @@ def receive(c_sock):
     if len(byteBuff) == 0:
         return
 
+    metadata = pyexiv2.ImageData(byteBuff)
+    exif = metadata.read_exif()
+    xmp = metadata.read_xmp()
+    print(exif)
+    print(xmp)
+    print(exif['Exif.Image.Orientation'])
+
     print(timeStamp, payloadLength, taskID, frameID, latitude, longitude, altitude, accuracy, jsonDataSize,
           data["roll"], data["pitch"], data["yaw"])
 
@@ -87,8 +93,7 @@ def receive(c_sock):
     # c_sock.send(readBuf)
     c_sock.send(b"Done")
 
-    i += 1
-    write_image(nparr, frameID, i)
+    write_image(nparr, frameID)
 
 
 # https://stackoverflow.com/questions/26445331/how-can-i-have-multiple-clients-on-a-tcp-python-chat-server

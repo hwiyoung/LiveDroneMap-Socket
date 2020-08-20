@@ -292,7 +292,7 @@ class AverageOrthoplaneRectifier(BaseRectifier):
         pixel_size = pixel_size / 1000  # unit: m/px
 
         logging.debug('Easting | Northing | Height | Omega | Phi | Kappa')
-        converted_eo = self.__geographic2plane(adjusted_eo, 5186)
+        converted_eo = self.__geographic2plane(adjusted_eo, 3857)
         R = self.__Rot3D(converted_eo)
 
         # 2. Extract a projected boundary of the image
