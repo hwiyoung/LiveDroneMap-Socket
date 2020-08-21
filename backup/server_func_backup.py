@@ -11,6 +11,20 @@ import cv2
 import time
 
 
+with open("config.json") as f:
+    data = json.load(f)
+
+SERVER_PORT = data["server"]["PORT"]
+QUEUE_LIMIT = data["server"]["QUEUE_LIMIT"]     # 서버 대기 큐
+
+CLIENT_IP = data["client"]["IP"]
+CLIENT_PORT = data["client"]["PORT"]
+
+client = socket(AF_INET, SOCK_STREAM)
+client.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
+client.connect((CLIENT_IP, CLIENT_PORT))
+
+
 # https://stackoverflow.com/questions/55014710/zero-fill-right-shift-in-python
 def zero_fill_right_shift(val, n):
     return (val >> n) if val >= 0 else ((val + 0x100000000) >> n)
@@ -84,7 +98,7 @@ def receive(c_sock):
     return taskID, frameID, latitude, longitude, altitude, data["roll"], data["pitch"], data["yaw"], nparr
 
 
-def send(frame_id, task_id, name, img_type, img_boundary, objects, orthophoto, client):
+def send(frame_id, task_id, name, img_type, img_boundary, objects, orthophoto):
     """
         Create a metadata of an orthophoto for tcp transmission
         :param uuid: uuid of the image | string
@@ -122,7 +136,7 @@ def send(frame_id, task_id, name, img_type, img_boundary, objects, orthophoto, c
 
 
 # https://stackoverflow.com/questions/26445331/how-can-i-have-multiple-clients-on-a-tcp-python-chat-server
-def client_thread(s_sock, client):
+def client_thread(s_sock):
     s_sock.send(b"Welcome to the Server. Type messages and press enter to send.\n")
     while True:
         start_time = time.time()
@@ -161,6 +175,6 @@ def client_thread(s_sock, client):
         logging.info('Current Drone: %s' % my_drone.__class__.__name__)
         logging.info('========================================================================================')
 
-        send(frameID, taskID, frameID, 0, bbox_wkt, [], orthophoto, client)    # 메타데이터 생성/ send to client
+        send(frameID, taskID, frameID, 0, bbox_wkt, [], orthophoto)    # 메타데이터 생성/ send to client
         print(time.time() - start_time)
     s_sock.close()

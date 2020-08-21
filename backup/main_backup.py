@@ -16,10 +16,6 @@ server = socket(AF_INET, SOCK_STREAM)    # 소켓 생성 (UDP = SOCK_DGRAM, TCP 
 server.bind(('', SERVER_PORT))           # 포트 설정
 server.listen(QUEUE_LIMIT)               # 포트 ON
 
-client = socket(AF_INET, SOCK_STREAM)
-client.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
-client.connect((CLIENT_IP, CLIENT_PORT))
-
 print('tcp server ready')  # 준비 완료 화면에 표시
 print('wait for client ')       # 연결 대기
 
@@ -28,7 +24,7 @@ while True:
         s_sock, s_addr = server.accept()
         print('connected from {}:{}'.format(s_addr[0], s_addr[1]))
 
-        start_new_thread(client_thread, (s_sock, client))
+        start_new_thread(client_thread, (s_sock, ))
     except Exception:
         import traceback
         print(traceback.format_exc())
@@ -40,4 +36,4 @@ while True:
         s_sock, s_addr = server.accept()
         print('Re: connected from {}:{}'.format(s_addr[0], s_addr[1]))
 
-        start_new_thread(client_thread, (s_sock, client))
+        start_new_thread(client_thread, (s_sock, ))
