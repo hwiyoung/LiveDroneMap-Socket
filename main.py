@@ -13,6 +13,7 @@ CLIENT_IP = data["client"]["IP"]
 CLIENT_PORT = data["client"]["PORT"]
 
 server = socket(AF_INET, SOCK_STREAM)    # 소켓 생성 (UDP = SOCK_DGRAM, TCP = SOCK_STREAM)
+server.setsockopt(SOL_SOCKET, SO_REUSEADDR, 1)
 server.bind(('', SERVER_PORT))           # 포트 설정
 server.listen(QUEUE_LIMIT)               # 포트 ON
 

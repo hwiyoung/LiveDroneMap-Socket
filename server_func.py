@@ -163,4 +163,3 @@ def client_thread(s_sock, client):
 
         send(frameID, taskID, frameID, 0, bbox_wkt, [], orthophoto, client)    # 메타데이터 생성/ send to client
         print(time.time() - start_time)
-    s_sock.close()
