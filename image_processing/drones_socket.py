@@ -37,7 +37,8 @@ class DJIPhantom4RTK:
         self.sensor_width = 13.2  # mm
         self.focal_length = 0.0088  # m
         self.gsd = "auto"
-        self.ground_height = 0.0  # m
+        # self.ground_height = 0.0  # m
+        self.ground_height = 38.0  # m, Jeonju Worldcup
         self.R_CB = np.array([[0.992103011532570, -0.0478682839576757, -0.115932057253170],
                               [0.0636038625107261, 0.988653550290218, 0.136083452970098],
                               [0.108102558627082, -0.142382530141501, 0.983890772356761]], dtype=float)

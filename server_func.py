@@ -8,6 +8,7 @@ import image_processing.georeferencers_socket as georeferencers
 import image_processing.rectifiers_socket as rectifiers
 import logging
 import cv2
+import time
 
 
 with open("config.json") as f:
@@ -117,6 +118,8 @@ def send(frame_id, task_id, name, img_type, img_boundary, objects, orthophoto):
     }
     img_metadata_bytes = json.dumps(img_metadata).encode()
 
+    print(img_metadata)
+
     # Write image to memory
     orthophoto_encode = cv2.imencode('.png', orthophoto)
     orthophoto_bytes = orthophoto_encode[1].tostring()
@@ -135,6 +138,7 @@ def send(frame_id, task_id, name, img_type, img_boundary, objects, orthophoto):
 def client_thread(s_sock):
     s_sock.send(b"Welcome to the Server. Type messages and press enter to send.\n")
     while True:
+        start_time = time.time()
         taskID, frameID, latitude, longitude, altitude, roll, pitch, yaw, img = receive(s_sock)
         if not taskID or not frameID or not latitude or not longitude or not altitude \
                 or not roll or not pitch or not yaw:
@@ -171,4 +175,5 @@ def client_thread(s_sock):
         logging.info('========================================================================================')
 
         send(frameID, taskID, frameID, 0, bbox_wkt, [], orthophoto)    # 메타데이터 생성/ send to client
+        print(time.time() - start_time)
     s_sock.close()
