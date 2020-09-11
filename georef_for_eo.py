@@ -24,6 +24,8 @@ class DirectGeoreferencer(BaseGeoreferencer):
     def georeference(self, my_drone, init_eo):
         if my_drone.manufacturer == 'DJI':
             direct_georeferencer = DirectGeoreferencerGimbalRPY()
+        elif my_drone.manufacturer == "Sandbox2020":
+            direct_georeferencer = DirectGeoreferencerSB20RPY()
         else:
             direct_georeferencer = DirectGeoreferencerFlightRPY()
         res = direct_georeferencer.georeference(my_drone, init_eo)
@@ -135,6 +137,29 @@ class DirectGeoreferencerGimbalRPY(BaseGeoreferencer):
 
         omega_phi = np.dot(self.rot_2d(gimbal_rpy[2] * np.pi / 180), roll_pitch.reshape(2, 1))
         kappa = -gimbal_rpy[2]
+        return np.array([float(omega_phi[0, 0]), float(omega_phi[1, 0]), kappa]) * np.pi / 180
+
+    def rot_2d(self, theta):
+        # Convert the coordinate system not coordinates
+        return np.array([[np.cos(theta), np.sin(theta)],
+                         [-np.sin(theta), np.cos(theta)]])
+
+
+class DirectGeoreferencerSB20RPY(BaseGeoreferencer):
+    def georeference(self, my_drone, init_eo):
+        # Gimbal
+        adjusted_opk = self.__rpy_to_opk(init_eo[3:])
+        adjusted_eo = np.array([init_eo[:3], adjusted_opk]).ravel()
+        return adjusted_eo
+
+    def __rpy_to_opk(self, gimbal_rpy):
+        roll_pitch = np.empty_like(gimbal_rpy[0:2])
+        roll_pitch[0] = gimbal_rpy[1]
+        roll_pitch[1] = gimbal_rpy[0]
+
+        yaw = gimbal_rpy[2] + 90
+        omega_phi = np.dot(self.rot_2d(yaw * np.pi / 180), roll_pitch.reshape(2, 1))
+        kappa = -yaw
         return np.array([float(omega_phi[0, 0]), float(omega_phi[1, 0]), kappa]) * np.pi / 180
 
     def rot_2d(self, theta):
