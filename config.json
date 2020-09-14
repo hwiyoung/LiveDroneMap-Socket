@@ -4,7 +4,7 @@
     "QUEUE_LIMIT": 5
   },
   "client": {
-    "IP": "127.0.0.1",
+    "IP": "ys.innopam.com",
     "PORT": 57821,
     "NoC": 4
   }
