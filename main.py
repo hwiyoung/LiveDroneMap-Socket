@@ -37,11 +37,9 @@ def start_connections(host, port, num_conns):
         sel_client.register(sock, events, data=data)
 
 
-def service_connection(key_s, mask_s, key_c, mask_c):
+def service_connection(key_s, mask_s, sock_c):
     sock_s = key_s.fileobj
     data_s = key_s.data
-    sock_c = key_c.fileobj
-    data_c = key_c.data
     if mask_s & selectors.EVENT_READ:
         try:
             taskID, frameID, latitude, longitude, altitude, roll, pitch, yaw, camera, img = receive(sock_s)
@@ -71,11 +69,11 @@ def service_connection(key_s, mask_s, key_c, mask_c):
         except Exception as e:
             print(e)
             print("closing connection to", data_s.addr)
-            # sel_server.unregister(sock_s)
-            # sock_s.close()
-            sel_client.close()
-            # sel_client.unregister(sock_c)
-            # sock_c.close()
+            sock_c.close()
+            global client_connection
+            client_connection = 0
+            sel_server.unregister(sock_s)
+            sock_s.close()
 
 
 with open("config.json") as f:
@@ -98,25 +96,28 @@ sel_server.register(lsock, selectors.EVENT_READ, data=None)
 CLIENT_IP = data["client"]["IP"]
 CLIENT_PORT = data["client"]["PORT"]
 num_conn = data["client"]["NoC"]
-start_connections(CLIENT_IP, CLIENT_PORT, num_conns=num_conn)
+print('starting connection...')
+sock_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+sock_client.connect_ex((CLIENT_IP, CLIENT_PORT))
+client_connection = 1
+print("Connected!")
 
 try:
     while True:
         events_servers = sel_server.select(timeout=None)
-        events_clients = sel_client.select(timeout=None)
-        for events_server, events_client in zip(events_servers, events_clients):
-            key_server = events_server[0]
-            mask_server = events_server[1]
-            key_client = events_client[0]
-            mask_client = events_client[1]
-            if key_server.data is None:
-                accept_wrapper(key_server.fileobj)
+        # events_clients = sel_client.select(timeout=None)
+        for key, mask in events_servers:
+            if key.data is None:
+                accept_wrapper(key.fileobj)
             else:
-                service_connection(key_server, mask_server, key_client, mask_client)
+                service_connection(key, mask, sock_client)
         # Check for a socket being monitored to continue
-        if not sel_client.get_map():
-            sel_client = selectors.DefaultSelector()
-            start_connections(CLIENT_IP, CLIENT_PORT, num_conns=num_conn)
+        if client_connection == 0:
+            print('starting connection...')
+            sock_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock_client.connect_ex((CLIENT_IP, CLIENT_PORT))
+            client_connection = 1
+            print("Connected!")
 except KeyboardInterrupt:
     print("caught keyboard interrupt, exiting")
 finally:
