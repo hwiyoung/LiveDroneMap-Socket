@@ -60,8 +60,8 @@ def service_connection(key_s, mask_s, sock_c):
                 my_georeferencer = georeferencers.DirectGeoreferencer()
                 adjusted_eo = my_georeferencer.georeference(my_drone, init_eo)
 
-            if abs(adjusted_eo[3]) < 10 or abs(adjusted_eo[4]) < 10:
-                print("Too much omega:", adjusted_eo[3], " or phi:", adjusted_eo[4])
+            if abs(adjusted_eo[3]) > 10 * np.pi / 180 or abs(adjusted_eo[4]) > 10 * np.pi / 180:    # Upper than 10 deg
+                print("Too much omega:", adjusted_eo[3] * 180/np.pi, " or phi:", adjusted_eo[4] * 180/np.pi)
                 return
 
             # 3. Rectify
