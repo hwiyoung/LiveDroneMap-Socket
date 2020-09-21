@@ -3,11 +3,8 @@ import uuid
 import json
 from socket import *
 from struct import *
-# import image_processing.drones_socket as drones
-# import image_processing.georeferencers_socket as georeferencers
-# import image_processing.rectifiers_socket as rectifiers
 import logging
-# import cv2
+import cv2
 import time
 
 
@@ -86,41 +83,43 @@ def receive(c_sock):
            data["roll"], data["pitch"], data["yaw"], data["exif"]["Model"], nparr
 
 
-# def send(frame_id, task_id, name, img_type, img_boundary, objects, orthophoto, client):
-#     """
-#         Create a metadata of an orthophoto for tcp transmission
-#         :param uuid: uuid of the image | string
-#         :param uuid: task id of the image | string
-#         :param name: A name of the original image | string
-#         :param img_type: A type of the image - optical(0)/thermal(1) | int
-#         :param img_boundary: Boundary of the orthophoto | string in wkt
-#         :param objects: JSON object? array? of the detected object ... from create_obj_metadata
-#         :return: JSON object of the orthophoto ... python dictionary
-#     """
-#     img_metadata = {
-#         "uid": str(frame_id),  # string
-#         "task_id": str(task_id),  # string
-#         "img_name": str(name),  # string
-#         "img_type": img_type,  # int
-#         "img_boundary": img_boundary,  # WKT ... string
-#         "objects": objects
-#     }
-#     img_metadata_bytes = json.dumps(img_metadata).encode()
-#
-#     print(img_metadata)
-#
-#     # Write image to memory
-#     orthophoto_encode = cv2.imencode('.png', orthophoto)
-#     orthophoto_bytes = orthophoto_encode[1].tostring()
-#
-#     #############################################
-#     # Send object information to web map viewer #
-#     #############################################
-#     full_length = len(img_metadata_bytes) + len(orthophoto_bytes)
-#     fmt = '<4siii' + str(len(img_metadata_bytes)) + 's' + str(len(orthophoto_bytes)) + 's'  # s: string, i: int
-#     data_to_send = pack(fmt, b"IPOD", full_length, len(img_metadata_bytes), len(orthophoto_bytes),
-#                         img_metadata_bytes, orthophoto_bytes)
-#     client.send(data_to_send)
+def send(frame_id, task_id, name, img_type, img_boundary, objects, orthophoto, client):
+    """
+        Create a metadata of an orthophoto for tcp transmission
+        :param frame_id: uuid of the image | string
+        :param task_id: task id of the image | string
+        :param name: A name of the original image | string
+        :param img_type: A type of the image - optical(0)/thermal(1) | int
+        :param img_boundary: Boundary of the orthophoto | string in wkt
+        :param objects: JSON object? array? of the detected object ... from create_obj_metadata
+        :return: JSON object of the orthophoto ... python dictionary
+    """
+    img_metadata = {
+        "uid": str(frame_id),  # string
+        "task_id": str(task_id),  # string
+        "img_name": str(name),  # string
+        "img_type": img_type,  # int
+        "img_boundary": img_boundary,  # WKT ... string
+        "objects": objects
+    }
+    img_metadata_bytes = json.dumps(img_metadata).encode()
+
+    # print(img_metadata)
+
+    # Write image to memory
+    orthophoto_encode = cv2.imencode('.png', orthophoto)
+    orthophoto_bytes = orthophoto_encode[1].tostring()
+
+    #############################################
+    # Send object information to web map viewer #
+    #############################################
+    full_length = len(img_metadata_bytes) + len(orthophoto_bytes)
+    fmt = '<4siii' + str(len(img_metadata_bytes)) + 's' + str(len(orthophoto_bytes)) + 's'  # s: string, i: int
+    print(fmt, b"IPOD", full_length, len(img_metadata_bytes), len(orthophoto_bytes),
+                        img_metadata_bytes)
+    data_to_send = pack(fmt, b"IPOD", full_length, len(img_metadata_bytes), len(orthophoto_bytes),
+                        img_metadata_bytes, orthophoto_bytes)
+    client.send(data_to_send)
 
 
 # # https://stackoverflow.com/questions/26445331/how-can-i-have-multiple-clients-on-a-tcp-python-chat-server

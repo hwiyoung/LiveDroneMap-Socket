@@ -1,13 +1,12 @@
+import sys
 import socket
 import selectors
 import types
-from socket_module import receive, send
+from socket_module import receive
 import json
 import numpy as np
 import drones
 import georef_for_eo as georeferencers
-import rectifiers
-import time
 
 sel_server = selectors.DefaultSelector()
 sel_client = selectors.DefaultSelector()
@@ -36,23 +35,29 @@ def start_connections(host, port, num_conns):
         sel_client.register(sock, events, data=data)
 
 
-def service_connection(key_s, mask_s, sock_c):
+def service_connection(key_s, mask_s, key_c, mask_c):
     sock_s = key_s.fileobj
     data_s = key_s.data
+    sock_c = key_c.fileobj
+    data_c = key_c.data
     if mask_s & selectors.EVENT_READ:
         try:
             taskID, frameID, latitude, longitude, altitude, roll, pitch, yaw, camera, img = receive(sock_s)
+            # print(taskID, frameID, latitude, longitude, altitude, roll, pitch, yaw, camera)
             if taskID is None:
-                print("No received data!!!")
-                return
-            if abs(roll) < 10 or abs(pitch) < 10:
-                print("Too much roll", roll, " or pitch", pitch)
                 return
 
-            start_time = time.time()
             # 1. Set IO
             my_drone = drones.Drones(make=camera, pre_calibrated=False)
             # my_drone = drones.Drones(make=camera, ground_height=38.0, pre_calibrated=True)  # Only for test - Jeonju
+            sensor_width = my_drone.sensor_width
+            focal_length = my_drone.focal_length
+            gsd = my_drone.gsd
+            ground_height = my_drone.ground_height
+            R_CB = my_drone.R_CB
+            comb = my_drone.comb
+            manufacturer = my_drone.manufacturer
+            pre_calibrated = my_drone.pre_calibrated
 
             # 2. System calibration & CCS converting
             init_eo = np.array([longitude, latitude, altitude, roll, pitch, yaw])
@@ -63,21 +68,41 @@ def service_connection(key_s, mask_s, sock_c):
                 my_georeferencer = georeferencers.DirectGeoreferencer()
                 adjusted_eo = my_georeferencer.georeference(my_drone, init_eo)
 
-            # 3. Rectify
-            my_rectifier = rectifiers.AverageOrthoplaneRectifier(height=my_drone.ground_height)
-            bbox_wkt, orthophoto = my_rectifier.rectify(img, my_drone, adjusted_eo)
-            print("Processing time:", format(time.time() - start_time, ".2f"))
+            print("Check")
 
-            send(frameID, taskID, frameID, 0, bbox_wkt, [], orthophoto, sock_c)  # 메타데이터 생성/ send to client
-            print("Elapsed time:", format(time.time() - start_time, ".2f"))
+            # # 3. Rectify
+            # my_rectifier = rectifiers.AverageOrthoplaneRectifier(height=my_drone.ground_height)
+            # bbox_wkt, orthophoto = my_rectifier.rectify(img, my_drone, adjusted_eo)
+            #
+            #         logging.info('========================================================================================')
+            #         logging.info('========================================================================================')
+            #         logging.info('A new image is received.')
+            #         logging.info('File name: %s' % frameID)
+            #         logging.info('Current Drone: %s' % my_drone.__class__.__name__)
+            #         logging.info('========================================================================================')
+            #
+            #         send(frameID, taskID, frameID, 0, bbox_wkt, [], orthophoto, client)    # 메타데이터 생성/ send to client
+            #         print(time.time() - start_time)
+        ########################
         except Exception as e:
             print(e)
             print("closing connection to", data_s.addr)
-            sock_c.close()
-            global client_connection
-            client_connection = 0
             sel_server.unregister(sock_s)
             sock_s.close()
+        ########################
+    # if mask & selectors.EVENT_WRITE:
+    #     if not data.outb:
+    #         data.outb = []
+    #     if data.outb:
+    #         print('sending', repr(data.outb), 'to connection', data.connid)
+    #         try:
+    #             sent = sock.send(data.outb)  # Should be ready to write
+    #             data.outb = data.outb[sent:]
+    #         except Exception as e:
+    #             print("send in service_connection:", e)
+    #             sel.unregister(sock)
+    #             sock.close()
+    #             return
 
 
 with open("config.json") as f:
@@ -100,28 +125,25 @@ sel_server.register(lsock, selectors.EVENT_READ, data=None)
 CLIENT_IP = data["client"]["IP"]
 CLIENT_PORT = data["client"]["PORT"]
 num_conn = data["client"]["NoC"]
-print('starting connection...')
-sock_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-sock_client.connect_ex((CLIENT_IP, CLIENT_PORT))
-client_connection = 1
-print("Connected!")
+start_connections(CLIENT_IP, CLIENT_PORT, num_conns=num_conn)
 
 try:
     while True:
         events_servers = sel_server.select(timeout=None)
-        # events_clients = sel_client.select(timeout=None)
-        for key, mask in events_servers:
-            if key.data is None:
-                accept_wrapper(key.fileobj)
+        events_clients = sel_client.select(timeout=None)
+        # for key_server, mask_server in events_servers:
+        for events_servers, events_clients in zip(events_servers, events_clients):
+            key_server = events_servers[0]
+            mask_server = events_servers[1]
+            key_client = events_clients[0]
+            mask_client = events_clients[1]
+            if key_server.data is None:
+                accept_wrapper(key_server.fileobj)
             else:
-                service_connection(key, mask, sock_client)
+                service_connection(key_server, mask_server, key_client, mask_client)
         # Check for a socket being monitored to continue
-        if client_connection == 0:
-            print('starting connection...')
-            sock_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock_client.connect_ex((CLIENT_IP, CLIENT_PORT))
-            client_connection = 1
-            print("Connected!")
+        if not sel_server.get_map():
+            start_connections(CLIENT_IP, CLIENT_PORT, num_conns=num_conn)
 except KeyboardInterrupt:
     print("caught keyboard interrupt, exiting")
 finally:

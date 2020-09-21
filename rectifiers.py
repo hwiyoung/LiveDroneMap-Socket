@@ -300,6 +300,7 @@ class AverageOrthoplaneRectifier(BaseRectifier):
 
         if self.gsd == 'auto':
             self.gsd = (pixel_size * (converted_eo[2] - self.height)) / my_drone.focal_length  # unit: m/px
+            self.gsd *= 2
 
         # Boundary size
         boundary_cols = int((bbox[1, 0] - bbox[0, 0]) / self.gsd)
