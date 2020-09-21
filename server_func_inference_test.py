@@ -119,8 +119,9 @@ def send(frame_id, task_id, name, img_type, img_boundary, objects, orthophoto):
     img_metadata_bytes = json.dumps(img_metadata).encode()
 
     # Write image to memory
-    orthophoto_encode = cv2.imencode('.png', orthophoto)
-    orthophoto_bytes = orthophoto_encode[1].tostring()
+    # orthophoto_encode = cv2.imencode('.png', orthophoto)
+    # orthophoto_bytes = orthophoto_encode[1].tostring()
+    orthophoto_bytes = str.encode(orthophoto)
 
     #############################################
     # Send object information to web map viewer #
@@ -186,5 +187,5 @@ def client_thread(s_sock):
         logging.info('Current Drone: %s' % my_drone.__class__.__name__)
         logging.info('========================================================================================')
 
-        # send(frameID, taskID, frameID, 0, bbox_wkt, [], orthophoto)    # 메타데이터 생성/ send to client
+        # send(frameID, taskID, frameID, 0, bbox_wkt, "", orthophoto)    # 메타데이터 생성/ send to client
     s_sock.close()
