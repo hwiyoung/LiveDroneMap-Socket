@@ -45,7 +45,7 @@ def service_connection(key_s, mask_s, sock_c):
             if taskID is None:
                 print("No received data!!!")
                 return
-            if abs(roll) < 10 or abs(pitch) < 10:
+            if abs(roll) < 10 or abs(pitch + 90) < 10:
                 print("Too much roll", roll, " or pitch", pitch)
                 return
 
