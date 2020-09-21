@@ -45,9 +45,6 @@ def service_connection(key_s, mask_s, sock_c):
             if taskID is None:
                 print("No received data!!!")
                 return
-            if abs(roll) < 10 or abs(pitch + 90) < 10:
-                print("Too much roll", roll, " or pitch", pitch)
-                return
 
             start_time = time.time()
             # 1. Set IO
@@ -62,6 +59,10 @@ def service_connection(key_s, mask_s, sock_c):
             else:
                 my_georeferencer = georeferencers.DirectGeoreferencer()
                 adjusted_eo = my_georeferencer.georeference(my_drone, init_eo)
+
+            if abs(adjusted_eo[3]) < 10 or abs(adjusted_eo[4]) < 10:
+                print("Too much omega:", adjusted_eo[3], " or phi:", adjusted_eo[4])
+                return
 
             # 3. Rectify
             my_rectifier = rectifiers.AverageOrthoplaneRectifier(height=my_drone.ground_height)
