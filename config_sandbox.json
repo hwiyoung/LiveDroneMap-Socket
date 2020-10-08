@@ -1,0 +1,17 @@
+{
+  "server": {
+    "PORT": 9190,
+    "QUEUE_LIMIT": 5
+  },
+  "client": {
+    "IP": "ys.innopam.com",
+    "PORT": 47821,
+    "NoC": 4
+  },
+  "processing": {
+    "pre_calibrated": "False",
+    "threshold_angle": 20,
+    "ground_height": 0.0,
+    "gsd": 0
+  }
+}

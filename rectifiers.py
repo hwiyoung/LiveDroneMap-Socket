@@ -6,15 +6,15 @@ from copy import copy
 import numpy as np
 from numba import jit
 from osgeo import gdal, osr, ogr
-import logging
+from logs.logger import logger
 
 
 class BaseRectifier(ABC):
-    def __init__(self, height, gsd='auto'):
+    def __init__(self, height, gsd):
         """
         Initialize rectifier.
         :param height: Average height (float) or file path of heightmap (DEM).
-        :param gsd: Desired ground sampling distance in meter. If 'auto', rectifier will automatically compute gsd.
+        :param gsd: Desired ground sampling distance in meter. If 0, rectifier will automatically compute gsd.
         """
         self.height = height
         self.gsd = gsd
@@ -208,8 +208,7 @@ class AverageOrthoplaneRectifier(BaseRectifier):
         coord_CCS_m = np.dot(R, coord)  # unit: m     3 x (row x col)
         scale = (coord_CCS_m[2]) / (-focal_length)  # 1 x (row x col)
         plane_coord_CCS = coord_CCS_m[0:2] / scale  # 2 x (row x col)
-        logging.debug(plane_coord_CCS.shape)
-        logging.debug(pixel_size)
+
         # Convert CCS to Pixel Coordinate System
         coord_CCS_px = plane_coord_CCS / pixel_size  # unit: px
         coord_CCS_px[1] = -coord_CCS_px[1]
@@ -291,16 +290,21 @@ class AverageOrthoplaneRectifier(BaseRectifier):
         pixel_size = my_drone.sensor_width / image_cols  # unit: mm/px
         pixel_size = pixel_size / 1000  # unit: m/px
 
-        logging.debug('Easting | Northing | Height | Omega | Phi | Kappa')
         converted_eo = self.__geographic2plane(adjusted_eo, 3857)
         R = self.__Rot3D(converted_eo)
+        logger.info('Easting(m) | Northing(m) | Height(m) | Omega(deg) | Phi(deg) | Kappa(deg)')
+        logger.info('%.3f | %.3f | %.3f | %.2f | %.2f | %.2f' %
+                    (converted_eo[0], converted_eo[1], converted_eo[2],
+                     converted_eo[3] * 180 / np.pi, converted_eo[4] * 180 / np.pi, converted_eo[5] * 180 / np.pi))
 
         # 2. Extract a projected boundary of the image
         bbox, proj_bbox = self.__boundary(restored_image, converted_eo, R, self.height, pixel_size, my_drone.focal_length)
 
-        if self.gsd == 'auto':
+        if self.gsd == 0:
             self.gsd = (pixel_size * (converted_eo[2] - self.height)) / my_drone.focal_length  # unit: m/px
-            self.gsd *= 2
+            logger.info("RE: Ground Sampling Distance: %.2f m/px" % self.gsd)
+        else:
+            logger.info("RE: Ground Sampling Distance: %.2f m/px" % self.gsd)
 
         # Boundary size
         boundary_cols = int((bbox[1, 0] - bbox[0, 0]) / self.gsd)

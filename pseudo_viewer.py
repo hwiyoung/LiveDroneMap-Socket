@@ -1,12 +1,10 @@
-import sys
 import socket
 import selectors
 import types
 from socket_module import receive
 import json
 import numpy as np
-import drones
-import georef_for_eo as georeferencers
+import cv2
 
 sel = selectors.DefaultSelector()
 
@@ -26,7 +24,9 @@ def service_connection(key, mask):
     data = key.data
     if mask & selectors.EVENT_READ:
         try:
-            recv_data = sock.recv(1024)
+            print("receiving...")
+            # recv_data = sock.recv(1024)
+            recv_data = receive(sock)
             if recv_data:
                 data.outb += recv_data
             else:
@@ -43,6 +43,34 @@ def service_connection(key, mask):
     if mask & selectors.EVENT_WRITE:
         if data.outb:
             print("echoing data from", data.addr)
+
+
+def receive(c_sock):
+    tag = c_sock.recv(4)
+    full_length = c_sock.recv(4)
+    full_length = np.frombuffer(full_length, dtype="int32")[0]
+    metadata_length = c_sock.recv(4)
+    metadata_length = np.frombuffer(metadata_length, dtype="int32")[0]
+    orthophoto_length = c_sock.recv(4)
+    orthophoto_length = np.frombuffer(orthophoto_length, dtype="int32")[0]
+
+    metadata = c_sock.recv(metadata_length)
+    my_json = metadata.decode('utf8').replace("'", '"')
+    data = json.loads(my_json)
+
+    byteBuff = b''
+    while len(byteBuff) < orthophoto_length:
+        byteBuff += c_sock.recv(orthophoto_length - len(byteBuff))
+    orthophoto = np.frombuffer(byteBuff, dtype="uint8")
+    if len(byteBuff) == 0:
+        return
+
+    decode_img = cv2.imdecode(orthophoto, -1)
+    cv2.imwrite(data["uid"] + ".png", decode_img)
+
+    print(tag, full_length, metadata_length, orthophoto_length)
+
+    return tag
 
 
 ### SERVER

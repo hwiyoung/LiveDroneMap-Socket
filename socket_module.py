@@ -114,8 +114,8 @@ def send(frame_id, task_id, name, img_type, img_boundary, objects, orthophoto, c
     #############################################
     full_length = len(img_metadata_bytes) + len(orthophoto_bytes)
     fmt = '<4siii' + str(len(img_metadata_bytes)) + 's' + str(len(orthophoto_bytes)) + 's'  # s: string, i: int
-    print(fmt, b"IPOD", full_length, len(img_metadata_bytes), len(orthophoto_bytes),
-                        img_metadata_bytes)
+    # print(fmt, b"IPOD", full_length, len(img_metadata_bytes), len(orthophoto_bytes),
+    #                     img_metadata_bytes)
     data_to_send = pack(fmt, b"IPOD", full_length, len(img_metadata_bytes), len(orthophoto_bytes),
                         img_metadata_bytes, orthophoto_bytes)
     client.send(data_to_send)
